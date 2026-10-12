@@ -159,6 +159,20 @@ void main() {
   }
 
   group('inference restore', () {
+    test('GGUF identity survives fromFile installation and restart', () async {
+      final model = userFile('weights', _modelBytes);
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.llama,
+        fileType: ModelFileType.gguf,
+      ).fromFile(model.path).install();
+      final restarted = await restart();
+      final spec = restarted.activeInferenceModel as InferenceModelSpec;
+      expect(spec.fileType, ModelFileType.gguf);
+      expect(spec.modelType, ModelType.llama);
+      expect(spec.modelSource, FileSource(model.path));
+      expect(await restarted.isModelInstalled(spec), isTrue);
+    });
+
     test('a fromFile model is active and installed after a restart', () async {
       final model = userFile('picked-model.task', _modelBytes);
       await installTask(model);

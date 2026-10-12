@@ -28,4 +28,6 @@ enum ModelFileType {
   litertlm, // .litertlm files - LiteRT-LM applies the chat template, on every platform
   builtIn, // OS system models (Gemini Nano, Apple Foundation Models) - no file, native side owns templates
   onnx, // ORT-GenAI model dirs (genai_config.json + .onnx[+.onnx_data] + tokenizer) - flutter_edge_ai_onnx engine
+  /// GGUF weights loaded by the opt-in llama.cpp inference provider.
+  gguf,
 }
