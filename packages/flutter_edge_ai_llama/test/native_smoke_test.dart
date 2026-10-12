@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/desktop/flutter_edge_ai_desktop.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,7 +15,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'published facade installs GGUF, chats, cancels and reloads',
+    'core facade installs GGUF, chats, cancels and reloads',
     () async {
       final scratch = await Directory.systemTemp.createTemp(
         'edge-llama-smoke-',
@@ -42,7 +42,7 @@ void main() {
       );
       await edge.FlutterEdgeAi.installModel(
         modelType: edge.ModelType.general,
-        fileType: edge.ModelFileType.binary,
+        fileType: edge.ModelFileType.gguf,
       ).fromFile(_modelPath).install();
       loaded = await edge.FlutterEdgeAi.getActiveModel(
         maxTokens: 2048,
@@ -119,7 +119,7 @@ void main() {
         (edge.FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel
                 as edge.InferenceModelSpec)
             .fileType,
-        edge.ModelFileType.binary,
+        edge.ModelFileType.gguf,
       );
       expect(
         edge

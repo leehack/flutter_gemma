@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,7 +21,7 @@ edge.InferenceModelSpec _spec(String path) => edge.InferenceModelSpec(
   name: 'native',
   modelSource: edge.ModelSource.file(path),
   modelType: edge.ModelType.general,
-  fileType: edge.ModelFileType.binary,
+  fileType: edge.ModelFileType.gguf,
 );
 
 void main() {

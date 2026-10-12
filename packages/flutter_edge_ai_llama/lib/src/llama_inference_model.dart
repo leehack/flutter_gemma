@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
@@ -55,7 +55,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   /// Installed model-level LoRA, used unless a session supplies another adapter.
   final String? defaultLoraPath;
   @override
-  edge.ModelFileType get fileType => edge.ModelFileType.binary;
+  edge.ModelFileType get fileType => edge.ModelFileType.gguf;
 
   final EngineQueue _queue = EngineQueue();
   final Set<LlamaInferenceSession> _detached = {};
@@ -63,6 +63,8 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   Future<void> _lifecycle = Future<void>.value();
   Future<void>? _closing;
   bool _closed = false;
+  @override
+  bool get isClosed => _closed;
   @override
   LlamaInferenceSession? get session => _session;
   @override

@@ -1,5 +1,4 @@
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// Native core has already resolved the primary model to a local path.
 Future<String> resolveModelLocation(
@@ -8,4 +7,7 @@ Future<String> resolveModelLocation(
 ) async => config.modelPath;
 
 /// Native core supplies the real inference identity to its provider.
-InferenceModelSpec resolveInferenceSpec(InferenceModelSpec spec) => spec;
+Future<InferenceModelSpec> resolveInferenceSpec(
+  InferenceModelSpec spec,
+  RuntimeConfig config,
+) async => spec;

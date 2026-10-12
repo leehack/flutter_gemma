@@ -103,15 +103,11 @@ after restart, reinstall the paired spec or pass `loraPath` explicitly.
 
 ## Compatibility boundaries
 
-Core 2.2.1 has no `ModelFileType.gguf`; only binary specs with a `.gguf` primary
-filename are claimed. Do not register another binary provider for these models.
-Core now owns imported-file restart restoration; the connector has no preference
-reader or activation workaround. The remaining Web shim and engine imports will
-move to public core libraries after the 2.3.0 API train lands.
-
-Core Web probes a synthetic `web-active` / `active.bin` spec. The connector
-recovers the active installed identity for that exact probe before selecting
-and loading it; unrelated binary formats are still rejected.
+Engine selection uses `ModelFileType.gguf`, regardless of model filename or
+provider registration order. Core owns imported-file restart restoration.
+The connector imports only public core libraries in shipped code and uses
+`WebModelSourceResolver` to retrieve the active Web spec and installed URL.
+There is no preference reader or synthetic-spec filename detection.
 Web resolves core's installed blob/network URLs. Use `WebStorageMode.cacheApi`
 or `none`; OPFS stream handles are not accepted by llamadart's URL loader.
 Missing bridge assets, unavailable GPU, unsupported projector/template grammar

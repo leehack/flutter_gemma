@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
@@ -17,7 +16,7 @@ typedef LlamaEngineLoader = Future<llama.LlamaEngine> Function(
 
 /// Resolves the projector paired with the selected model, natively or on Web.
 ///
-/// Core 2.2.x has no GGUF projector install slot. The app must install/cache the
+/// Core has no GGUF projector install slot. The app must install/cache the
 /// projector and return its local path or browser URL through this resolver.
 typedef LlamaProjectorResolver = Future<llama.ModelSource?> Function(
   edge.InferenceModelSpec spec,
@@ -26,7 +25,7 @@ typedef LlamaProjectorResolver = Future<llama.ModelSource?> Function(
 
 /// Registers GGUF inference with Flutter Edge AI on native and Web runtimes.
 ///
-/// Only binary specs ending in `.gguf` are claimed until core adds GGUF identity.
+/// Claims only specs declared as [edge.ModelFileType.gguf], regardless of name.
 class LlamaEngineProvider implements InferenceEngineProvider {
   /// Creates a provider, optionally resolving model-specific projectors.
   const LlamaEngineProvider({this.loader, this.projectorResolver});
@@ -42,21 +41,18 @@ class LlamaEngineProvider implements InferenceEngineProvider {
   @override
   int get priority => 0;
   @override
-  bool canHandle(edge.InferenceModelSpec spec) {
-    final actual = resolveInferenceSpec(spec);
-    return actual.fileType == edge.ModelFileType.binary &&
-        actual.files.first.filename.toLowerCase().endsWith('.gguf');
-  }
+  bool canHandle(edge.InferenceModelSpec spec) =>
+      spec.fileType == edge.ModelFileType.gguf;
 
   @override
   Future<edge.InferenceModel> createModel(
     edge.InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
-    spec = resolveInferenceSpec(spec);
+    spec = await resolveInferenceSpec(spec, config);
     if (!canHandle(spec)) {
       throw llama.LlamaUnsupportedException(
-        'Declare a .gguf model as ModelFileType.binary.',
+        'Declare GGUF weights as ModelFileType.gguf.',
       );
     }
     if (config.maxTokens <= 0) {

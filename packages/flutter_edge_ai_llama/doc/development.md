@@ -34,7 +34,7 @@ Native capabilities have independent opt-in defines for audio model/projector/
 WAV, vision model/projector/PNG, LoRA base/adapter and GPU model. See
 `test/native_capabilities_test.dart`. Unconfigured model tests skip. To test
 imported-file restart with the facade smoke, supply `GGUF_MODEL_PATH`;
-core 2.2.1 restores it without a connector helper.
+core restores it without a connector helper.
 
 The real Web smoke runner requires a POSIX host (Linux or macOS) and uses Chrome and Flutter's Wasm test mode. Flutter
 3.47.1 omits COEP on test worker scripts even with `--cross-origin-isolation`;
@@ -101,3 +101,5 @@ consumer resolution problems or metadata. It does not publish. It permits only a
 `tool/verify.py package` rejects any other warning or validation error. A release
 must choose repository metadata and a version, cut the changelog, complete the
 platform matrix and run independent review before publication.
+
+For the pending public API migration, see [core 2.3 preparation](core_2_3_migration.md).

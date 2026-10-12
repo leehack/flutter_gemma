@@ -4,10 +4,9 @@ library;
 import 'dart:async';
 import 'dart:js_interop';
 
-import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
-import 'package:flutter_edge_ai/web/flutter_edge_ai_web.dart';
+// ignore: implementation_imports — Flutter unit tests must register the Web plugin explicitly.
+import 'package:flutter_edge_ai/src/web/flutter_edge_ai_web.dart';
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart' as llama;
@@ -23,68 +22,6 @@ const _bridgeRoot = String.fromEnvironment(
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
-  test(
-    'Web synthetic probe uses the active identity and rejects other formats',
-    () async {
-      SharedPreferences.setMockInitialValues({});
-      edge.FlutterEdgeAiPlugin.instance = FlutterEdgeAiWeb();
-      final manager =
-          edge.FlutterEdgeAiPlugin.instance.modelManager as WebModelManager;
-      final probe = edge.InferenceModelSpec(
-        name: 'web-active',
-        modelSource: edge.AssetSource('models/active.bin'),
-        modelType: edge.ModelType.general,
-        fileType: edge.ModelFileType.binary,
-      );
-      final sentinel = llama.LlamaStateException('Loader reached');
-      final provider = LlamaEngineProvider(
-        loader: (location, params) async {
-          expect(location, 'https://example.test/model.gguf');
-          throw sentinel;
-        },
-      );
-      expect(provider.canHandle(probe), isFalse);
-      for (final filename in ['model.gguf', 'other.bin', 'other.task']) {
-        await manager.activateInstalledModel(
-          edge.InferenceModelSpec(
-            name: filename,
-            modelSource: edge.NetworkSource('https://example.test/$filename'),
-            modelType: edge.ModelType.general,
-            fileType: edge.ModelFileType.binary,
-          ),
-        );
-        expect(provider.canHandle(probe), filename.endsWith('.gguf'));
-        if (filename.endsWith('.gguf')) {
-          await expectLater(
-            provider.createModel(
-              probe,
-              const RuntimeConfig(
-                modelPath: 'https://example.test/model.gguf',
-                maxTokens: 512,
-              ),
-            ),
-            throwsA(same(sentinel)),
-          );
-        } else {
-          await expectLater(
-            provider.createModel(
-              probe,
-              const RuntimeConfig(
-                modelPath: 'https://example.test/other.bin',
-                maxTokens: 512,
-              ),
-            ),
-            throwsA(isA<llama.LlamaUnsupportedException>()),
-          );
-        }
-      }
-      await edge.FlutterEdgeAi.initialize(
-        webStorageMode: edge.WebStorageMode.none,
-      );
-      await manager.clearActiveInferenceIdentity();
-      expect(provider.canHandle(probe), isFalse);
-    },
-  );
   test(
     'real browser facade installs a URL and runs GGUF generation',
     () async {
@@ -155,7 +92,7 @@ void main() {
           );
           await edge.FlutterEdgeAi.installModel(
             modelType: edge.ModelType.general,
-            fileType: edge.ModelFileType.binary,
+            fileType: edge.ModelFileType.gguf,
           ).fromNetwork(_modelUrl).install();
           // ignore: avoid_print
           print('WEB_SMOKE: installed model URL');

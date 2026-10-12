@@ -48,7 +48,7 @@ Future<void> main() async {
 
   await FlutterEdgeAi.installModel(
     modelType: ModelType.general,
-    fileType: ModelFileType.binary,
+    fileType: ModelFileType.gguf,
   ).fromFile('/absolute/path/to/chat.gguf').install();
 
   final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
@@ -73,15 +73,15 @@ Core 2.2.1 restores installed models during initialization; conversation history
 starts fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers
 described in the package guide.
 
-This draft uses core 2.2.x and `ModelFileType.binary` for GGUF. Register the llama
-provider alone for GGUF until core adds its dedicated file type. Migration to
-core's 2.3.0 public engine libraries remains pending.
+This preparation branch uses the pending core 2.3 public engine APIs and a
+dedicated `ModelFileType.gguf`. Provider registration order no longer controls
+GGUF routing. The core release containing both is required before publication.
 
 ## Add the development package
 
 The package is not on pub.dev yet. Use the example or a path dependency on
-`packages/flutter_edge_ai_llama` in your clone. Core 2.2.1 is published and
-requires no local-core override.
+`packages/flutter_edge_ai_llama` in your clone. This preparation branch needs the matching unreleased core checkout;
+see the package migration guide.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
 `llamadart_llama_cpp_flutter: 0.0.21` SwiftPM companion.

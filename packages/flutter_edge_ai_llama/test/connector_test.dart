@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/registry/engine_registry.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+// ignore: implementation_imports — verifies real registry selection for colliding priorities.
+import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -26,26 +27,58 @@ void main() {
     EngineRegistry.instance.reset();
   });
 
-  test('registry claims only binary GGUF specs', () {
+  test('registry selects GGUF by declared type regardless of filename', () {
     const provider = LlamaEngineProvider();
-    EngineRegistry.instance.registerAll([provider]);
-    expect(
-      EngineRegistry.instance.findFor(_spec('model.gguf')),
-      same(provider),
-    );
-    expect(
-      EngineRegistry.instance.findFor(_spec('model.GGUF')),
-      same(provider),
-    );
-    for (final filename in ['model.bin', 'model.task', 'model.litertlm']) {
-      expect(EngineRegistry.instance.findFor(_spec(filename)), isNull);
+    final binary = _BinaryProvider();
+    for (final providers in [
+      <InferenceEngineProvider>[binary, provider],
+      <InferenceEngineProvider>[provider, binary],
+    ]) {
+      EngineRegistry.instance.registerAll(providers);
+      for (final filename in [
+        'model.gguf',
+        'active.bin',
+        'weights',
+        'blob:id',
+      ]) {
+        expect(
+          EngineRegistry.instance.findFor(_spec(filename)),
+          same(provider),
+        );
+      }
+      expect(
+        EngineRegistry.instance.findFor(
+          _spec('model.gguf', edge.ModelFileType.binary),
+        ),
+        same(binary),
+      );
+      for (final type in edge.ModelFileType.values.where(
+        (t) => t != edge.ModelFileType.gguf,
+      )) {
+        expect(provider.canHandle(_spec('model.gguf', type)), isFalse);
+      }
+      EngineRegistry.instance.reset();
     }
-    expect(
-      EngineRegistry.instance.findFor(
-        _spec('model.gguf', edge.ModelFileType.task),
-      ),
-      isNull,
+    expect(model.fileType, edge.ModelFileType.gguf);
+  });
+
+  test('provider rejects binary GGUF before loading', () async {
+    final provider = LlamaEngineProvider(
+      loader: (_, _) async => fail('Must not load'),
     );
+    await expectLater(
+      provider.createModel(
+        _spec('model.gguf', edge.ModelFileType.binary),
+        const RuntimeConfig(modelPath: 'model.gguf', maxTokens: 512),
+      ),
+      throwsA(isA<llama.LlamaUnsupportedException>()),
+    );
+  });
+
+  test('closed state follows model lifecycle', () async {
+    expect(model.isClosed, isFalse);
+    await model.close();
+    expect(model.isClosed, isTrue);
   });
 
   test('provider forwards context and CPU selection through load', () async {
@@ -336,7 +369,7 @@ void main() {
     () async {
       final provider = LlamaEngineProvider(loader: (_, _) async => engine);
       final loaded = await provider.createModel(
-        _spec('gemma.gguf', edge.ModelFileType.binary, edge.ModelType.gemma4),
+        _spec('gemma.gguf', edge.ModelFileType.gguf, edge.ModelType.gemma4),
         const RuntimeConfig(modelPath: 'gemma.gguf', maxTokens: 2048),
       );
       try {
@@ -398,7 +431,7 @@ void main() {
   test('session thinking uses installed family and partial overrides keep defaults', () async {
     final provider = LlamaEngineProvider(loader: (_, _) async => engine);
     final loaded = await provider.createModel(
-      _spec('qwen.gguf', edge.ModelFileType.binary, edge.ModelType.qwen3),
+      _spec('qwen.gguf', edge.ModelFileType.gguf, edge.ModelType.qwen3),
       const RuntimeConfig(modelPath: 'qwen.gguf', maxTokens: 2048),
     );
     try {
@@ -1173,7 +1206,7 @@ void main() {
 
 edge.InferenceModelSpec _spec(
   String filename, [
-  edge.ModelFileType fileType = edge.ModelFileType.binary,
+  edge.ModelFileType fileType = edge.ModelFileType.gguf,
   edge.ModelType modelType = edge.ModelType.general,
 ]) => edge.InferenceModelSpec(
   name: filename,
@@ -1418,3 +1451,18 @@ llama.LlamaCompletionChunk _toolChunk(
 edge.ModelSource _source(String path) => kIsWeb
     ? edge.ModelSource.network('https://models.invalid/${path.split('/').last}')
     : edge.ModelSource.file(path);
+
+class _BinaryProvider implements InferenceEngineProvider {
+  @override
+  String get name => 'binary-only';
+  @override
+  int get priority => 0;
+  @override
+  bool canHandle(edge.InferenceModelSpec spec) =>
+      spec.fileType == edge.ModelFileType.binary;
+  @override
+  Future<edge.InferenceModel> createModel(
+    edge.InferenceModelSpec spec,
+    RuntimeConfig config,
+  ) async => throw StateError('Binary provider must not load GGUF');
+}

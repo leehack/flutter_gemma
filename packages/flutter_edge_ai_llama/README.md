@@ -12,8 +12,10 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
 The tested dependencies are Flutter **3.47.1 / Dart 3.13.1**,
-`flutter_edge_ai 2.2.1`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
-Core 2.2.1 is published. This draft contribution targets its inference APIs;
+`flutter_edge_ai 2.3.0`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
+This preparation branch targets the pending core 2.3.0 train plus its GGUF type
+addition. That core dependency is not published yet; see
+[development setup](doc/core_2_3_migration.md) before using this branch.
 GGUF embeddings are deferred to a separate contribution against the new core SPI.
 
 ## Try a chat in a few minutes
@@ -84,7 +86,7 @@ the path below with the package directory relative to your app's pubspec:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: '>=2.2.1 <2.3.0'
+  flutter_edge_ai: ^2.3.0
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
@@ -129,7 +131,7 @@ Future<void> main() async {
 
   await FlutterEdgeAi.installModel(
     modelType: ModelType.general,
-    fileType: ModelFileType.binary,
+    fileType: ModelFileType.gguf,
   ).fromFile('/absolute/path/to/chat.gguf').install();
 
   final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
@@ -145,11 +147,11 @@ Future<void> main() async {
 }
 ```
 
-Core 2.2.1 uses `ModelFileType.binary` for GGUF; the connector recognizes the
-`.gguf` filename. It does not claim other binary formats. On Web, replace
+Declare GGUF models with `ModelFileType.gguf`. Engine selection uses the
+declared type, so filenames and provider registration order do not decide it. On Web, replace
 `.fromFile(...)` with `.fromNetwork(modelUrl)` and prepare the assets/headers above.
 
-Core 2.2.1 restores the installed imported model during initialization. Load it
+Core restores the installed imported model during initialization. Load it
 with `getActiveModel`; conversation history starts fresh. No connector-specific
 restore call is needed.
 
@@ -163,17 +165,17 @@ conversation can continue. Close the model when your feature is finished.
 This contribution provides inference only. GGUF embeddings are preserved for a
 [follow-up](doc/deferred_embeddings.md) against core's new embedding SPI.
 
-The current core range accepts 2.2.x patches and requires its imported-file
-restore fix. The upcoming 2.3.0 API move is intentionally excluded until the
-connector switches to `engine.dart` / `engine_web.dart` and a dedicated GGUF
-file type. Until then, register the llama provider alone for GGUF; MediaPipe
-also claims binary models at the same priority. This draft is not release-ready.
+The connector uses core's public `engine.dart` and `engine_web.dart` APIs,
+including `WebModelSourceResolver` for installed Web models. The dependency
+floor must be a published core release containing both these APIs and
+`ModelFileType.gguf`. The current `^2.3.0` constraint is provisional until that
+release contains the GGUF addition. This preparation branch remains draft.
 
 ## Troubleshooting
 
 | What you see | What to check |
 | --- | --- |
-| No engine handles the model | Use an instruction-tuned `.gguf` and `ModelFileType.binary`. |
+| No engine handles the model | Use an instruction-tuned `.gguf` and `ModelFileType.gguf`. |
 | Model loading fails | Check the model path, available memory, and that the file is a complete, compatible GGUF. |
 | Context budget exceeded | Start a new chat, shorten the prompt, or increase `maxTokens` if memory permits. There is no automatic context compaction. |
 | Reply ends early | Increase `maxOutputTokens`; the demo reports when its output limit is reached. |

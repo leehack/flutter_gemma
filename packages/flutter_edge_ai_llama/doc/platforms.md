@@ -1,3 +1,7 @@
+> Core 2.3 preparation: current migration checks use the unreleased train plus
+> `ModelFileType.gguf`. See [migration setup](core_2_3_migration.md). Dated CI
+> evidence below belongs to earlier PR heads and does not qualify this branch.
+
 # Platforms, capabilities and qualification
 
 The connector targets Android, iOS, macOS, Windows, Linux and Web. A platform
