@@ -8,6 +8,7 @@ environment:
 # `resolution: workspace` in its own pubspec.yaml.
 workspace:
   - packages/flutter_edge_ai
+  - packages/flutter_edge_ai_llama
   - packages/flutter_edge_ai_rag
   - packages/flutter_edge_ai_sqlite
   - packages/flutter_edge_ai_qdrant
@@ -43,3 +44,9 @@ melos:
     test_dart:
       run: melos exec --dir-exists=test --no-flutter -- "dart test"
       description: Unit-test pure-Dart packages (no Flutter dependency).
+
+# Consumer apps must select this runtime in their own root hook settings.
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
