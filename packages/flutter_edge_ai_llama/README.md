@@ -9,9 +9,15 @@ Tools, thinking, images/audio and native LoRA require compatible models and
 runtimes. See [advanced usage](doc/advanced_usage.md) and the
 [platform qualification matrix](doc/platforms.md) for their limits.
 
-The minimum is Flutter **3.44 / Dart 3.12**, with core **2.4.0+**,
-llamadart **0.15.0** and Apple companion **0.15.0**. Connector CI uses Flutter
-3.47.1 / Dart 3.13.1 for reproducible checks. GGUF embeddings are deferred.
+Published version 0.0.1 provides inference with llamadart 0.13.1. This source
+branch adds the qualified SDK upgrade and native text embeddings for a future release.
+
+The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**,
+published llamadart **0.15.1** with typed overflow reporting and Apple
+companion **0.15.0**. Standalone hosted resolution requires publication of
+core 2.5.0. Connector CI uses Flutter
+3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
+[the embedding guide](doc/embeddings.md); media and Web embeddings are deferred.
 
 ## Try a chat in a few minutes
 
@@ -81,16 +87,16 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-Published version 0.0.1 uses llamadart 0.13.1. This source branch qualifies
-llamadart 0.15.0 for the next adapter release; use a path dependency on this
-checkout until that release is published. Replace the path below relative
-to your app:
+This draft uses published llamadart 0.15.1 and requires core 2.5.0 to be
+published before standalone hosted resolution can pass. Use the source
+workspace for development until then. The future standalone setup is shown
+below; adjust the source path for your app:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai: ^2.5.0
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
@@ -108,9 +114,9 @@ only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-The connector constrains llamadart to the selected 0.15.0 patch; update that
-constraint only after validating it with the matching Apple companion.
-SDK 0.15.0 uses companion 0.15.0; companion patches are versioned independently
+The SDK constraint is bounded to published patch 0.15.1. Core 2.5.0 still
+needs publication; source qualification is not hosted artifact qualification.
+This candidate uses SDK 0.15.1 with companion 0.15.0; companion patches are versioned independently
 within the SDK minor.
 Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
 For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting
@@ -203,13 +209,14 @@ conversation can continue. Close the model when your feature is finished.
 
 ## Contribution scope
 
-This contribution provides inference only. GGUF embeddings are deferred to a
-[follow-up](doc/deferred_embeddings.md) against core's new embedding SPI.
+This contribution provides inference and a native EmbeddingGemma 2 text
+[embedding backend](doc/embeddings.md) in the same package. Media and Web
+embeddings remain follow-ups.
 
 The connector uses core 2.3's public `engine.dart` / `engine_web.dart` APIs.
 Dedicated GGUF identity removes the routing conflict with MediaPipe. Core restores
 paired LoRA adapters after restart and refuses restoration if an adapter is missing.
-They shipped in core 2.3.2; this connector requires core 2.4.0 for typed tool history.
+They shipped in core 2.3.2; typed tool history requires core 2.4.0; this embedding contribution raises the minimum to 2.5.0.
 
 ## Troubleshooting
 
