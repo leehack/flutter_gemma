@@ -55,6 +55,13 @@ Linux and Windows targets. Android auto selection uses CPU; Linux/Windows use
 Vulkan where available. The demo explicitly selects CPU-only bundles on those
 platforms; apps choose backend packaging in their own hook settings.
 
+On native Linux and Windows auto (`preferredBackend` unset) and GPU loads,
+`LlamaEngineProvider` requests `const GpuMemoryFit()` from llamadart while
+preserving `maxTokens`; explicit CPU, Apple, Android and Web loads leave it
+unset. Partial GPU layer offload and automatic CPU fallback (when zero layers
+fit) are logged as warnings in release builds via the SDK fit report, whereas
+explicit GPU fails with the fit reason when zero layers fit.
+
 Apple applications add `llamadart_llama_cpp_flutter: 0.20.1` directly and enable
 Flutter SwiftPM. Use iOS 16.4+ and macOS 14+. iOS applications enable the
 extended-virtual-addressing and increased-memory-limit entitlements; the example

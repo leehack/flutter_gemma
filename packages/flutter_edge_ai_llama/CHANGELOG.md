@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fit Linux/Windows GGUF GPU loads to free VRAM via llamadart GpuMemoryFit.
 - Update llamadart to ^0.20.1 with compatible Apple and Web runtimes.
 
 ## 0.1.0

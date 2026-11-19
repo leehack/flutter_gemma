@@ -192,7 +192,10 @@ Source pins llamadart `^0.20.1` and exact Apple companion `0.20.1` (tested on SD
 `0.20.1`, companion `0.20.1`, native artifacts `v1.0.0-2`, and Web bridge
 `v0.1.86`; published 0.1.0 used `0.17.5` / `0.17.3` / `v0.8.0-1` / `v0.1.79`).
 Full platform qualification of these pins is pending; earlier qualification
-evidence does not qualify the updated pair.
+evidence does not qualify the updated pair. On native Linux and Windows auto or
+GPU loads, `LlamaEngineProvider` requests `const GpuMemoryFit()` while
+preserving `maxTokens`, reporting partial GPU offload or automatic CPU fallback
+in release builds and failing explicit GPU requests when zero layers fit.
 
 The adapter implements tools, thinking, independent histories, native LoRA,
 and projector-backed image/audio input. Each requires a

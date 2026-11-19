@@ -182,7 +182,12 @@ this GGUF adapter. They describe other engines and cannot be meaningfully
 forwarded to llama.cpp through this contract.
 
 Backend reporting uses the runtime backend name, not the requested offload count.
-Explicit GPU requests reject a reported CPU backend; unknown identity stays unknown. Runtime usage drives metrics; output tokens are zero/unknown when usage is not
+Explicit GPU requests reject a reported CPU backend; unknown identity stays unknown.
+On native Linux and Windows auto or GPU loads, `LlamaEngineProvider` requests
+`const GpuMemoryFit()` with `maxTokens` preserved, allows automatic CPU
+fallback when zero layers fit, fails explicit GPU loads with the fit reason,
+and prints release-build warnings from the SDK fit report for partial offload
+and automatic CPU fallback. Runtime usage drives metrics; output tokens are zero/unknown when usage is not
 reported. Throughput includes prefill. The demo labels missing output counts as unavailable. Completed turns commit history. Cancellation/errors remove pending user input and
 partial assistant output; results of already committed tool calls are retained.
 

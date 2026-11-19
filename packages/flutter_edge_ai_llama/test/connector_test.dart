@@ -10,6 +10,7 @@ import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
+import 'package:flutter_edge_ai_llama/src/gpu_memory_fit_platform.dart';
 import 'package:flutter_edge_ai_llama/src/llama_inference_model.dart';
 import 'package:flutter_edge_ai_llama/src/llama_inference_session.dart';
 import 'package:flutter_edge_ai_llama/src/runtime_error.dart';
@@ -4441,6 +4442,424 @@ void main() {
       },
     );
   }
+
+  group('gpuMemoryFit', () {
+    const device = llama.GpuMemoryFitDevice(
+      name: 'Vulkan0',
+      freeBytes: 4000000000,
+      totalBytes: 8000000000,
+      modelBytes: 2500000000,
+      contextBytes: 300000000,
+      computeBytes: 100000000,
+    );
+
+    test('host policy selects Linux and Windows natively only', () {
+      if (kIsWeb) {
+        expect(supportsGpuMemoryFit(), isFalse);
+        expect(supportsGpuMemoryFit(isLinux: true, isWindows: true), isFalse);
+        return;
+      }
+      expect(supportsGpuMemoryFit(isLinux: true, isWindows: false), isTrue);
+      expect(supportsGpuMemoryFit(isLinux: false, isWindows: true), isTrue);
+      expect(supportsGpuMemoryFit(isLinux: false, isWindows: false), isFalse);
+    });
+
+    test(
+      'requests const GpuMemoryFit on supported Linux/Windows auto and GPU loads only',
+      () async {
+        final captured = <llama.ModelParams>[];
+        final supportedProvider = createLlamaProviderForTest(
+          supportsGpuMemoryFit: () => true,
+          loader: (_, params) async {
+            params.validate();
+            captured.add(params);
+            return engine;
+          },
+        );
+        final unsupportedProvider = createLlamaProviderForTest(
+          supportsGpuMemoryFit: () => false,
+          loader: (_, params) async {
+            params.validate();
+            captured.add(params);
+            return engine;
+          },
+        );
+
+        engine.gpuLayers = 12;
+        for (final backend in <edge.PreferredBackend?>[
+          null,
+          edge.PreferredBackend.gpu,
+        ]) {
+          final loaded = await supportedProvider.createModel(
+            _spec('model.gguf'),
+            RuntimeConfig(
+              modelPath: '/models/model.gguf',
+              maxTokens: 2048,
+              preferredBackend: backend,
+            ),
+          );
+          await loaded.close();
+        }
+        expect(captured[0].gpuMemoryFit, const llama.GpuMemoryFit());
+        expect(captured[0].device, llama.ComputeDevice.auto);
+        expect(captured[0].contextSize, 2048);
+        expect(captured[1].gpuMemoryFit, const llama.GpuMemoryFit());
+        expect(captured[1].device, llama.ComputeDevice.gpu);
+        expect(captured[1].contextSize, 2048);
+
+        engine.gpuLayers = 0;
+        engine.gpuMemoryFitReportReads = 0;
+        final cpuLoaded = await supportedProvider.createModel(
+          _spec('model.gguf'),
+          const RuntimeConfig(
+            modelPath: '/models/model.gguf',
+            maxTokens: 2048,
+            preferredBackend: edge.PreferredBackend.cpu,
+          ),
+        );
+        await cpuLoaded.close();
+        expect(captured[2].gpuMemoryFit, isNull);
+        expect(captured[2].device, llama.ComputeDevice.cpu);
+        expect(engine.gpuMemoryFitReportReads, 0);
+
+        engine.gpuLayers = 12;
+        for (final backend in <edge.PreferredBackend?>[
+          null,
+          edge.PreferredBackend.gpu,
+        ]) {
+          final loaded = await unsupportedProvider.createModel(
+            _spec('model.gguf'),
+            RuntimeConfig(
+              modelPath: '/models/model.gguf',
+              maxTokens: 2048,
+              preferredBackend: backend,
+            ),
+          );
+          await loaded.close();
+        }
+        expect(captured[3].gpuMemoryFit, isNull);
+        expect(captured[4].gpuMemoryFit, isNull);
+        expect(engine.gpuMemoryFitReportReads, 0);
+      },
+      skip: kIsWeb,
+    );
+
+    test('Web leaves gpuMemoryFit unset for auto and GPU loads', () async {
+      final captured = <llama.ModelParams>[];
+      final provider = createLlamaProviderForTest(
+        supportsGpuMemoryFit: () => true,
+        loader: (_, params) async {
+          captured.add(params);
+          return engine;
+        },
+      );
+      engine.gpuLayers = 12;
+      for (final backend in <edge.PreferredBackend?>[
+        null,
+        edge.PreferredBackend.gpu,
+      ]) {
+        final loaded = await provider.createModel(
+          _spec('model.gguf'),
+          RuntimeConfig(
+            modelPath: 'https://models.invalid/model.gguf',
+            maxTokens: 2048,
+            preferredBackend: backend,
+          ),
+        );
+        await loaded.close();
+      }
+      expect(captured.map((p) => p.gpuMemoryFit), [isNull, isNull]);
+      expect(engine.gpuMemoryFitReportReads, 0);
+    }, skip: !kIsWeb);
+
+    test(
+      'preserves config.maxTokens and rejects shrunken loaded context',
+      () async {
+        final logs = <String>[];
+        engine
+          ..contextSize = 1024
+          ..gpuLayers = 12
+          ..gpuMemoryFitReport = const llama.GpuMemoryFitReport(
+            outcome: llama.GpuMemoryFitOutcome.reduced,
+            modelLayers: 28,
+            gpuLayers: 12,
+            contextSize: 1024,
+            marginBytes: llama.GpuMemoryFit.defaultMarginBytes,
+          );
+        final provider = createLlamaProviderForTest(
+          supportsGpuMemoryFit: () => true,
+          loader: (_, _) async => engine,
+        );
+        await runZoned(
+          () async {
+            await expectLater(
+              provider.createModel(
+                _spec('model.gguf'),
+                const RuntimeConfig(
+                  modelPath: '/models/model.gguf',
+                  maxTokens: 2048,
+                ),
+              ),
+              throwsA(isA<StateError>()),
+            );
+          },
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, String line) => logs.add(line),
+          ),
+        );
+        expect(engine.disposals, 1);
+        expect(logs, isEmpty);
+      },
+      skip: kIsWeb,
+    );
+
+    test(
+      'reports partial offload in release builds and keeps GPU activeBackend',
+      () async {
+        final logs = <String>[];
+        engine
+          ..gpuLayers = 12
+          ..backendName = 'Vulkan, CPU'
+          ..gpuMemoryFitReport = const llama.GpuMemoryFitReport(
+            outcome: llama.GpuMemoryFitOutcome.reduced,
+            modelLayers: 28,
+            gpuLayers: 12,
+            contextSize: 2048,
+            marginBytes: llama.GpuMemoryFit.defaultMarginBytes,
+            devices: [device],
+          );
+        final provider = createLlamaProviderForTest(
+          supportsGpuMemoryFit: () => true,
+          loader: (_, _) async => engine,
+        );
+        final loaded = await runZoned(
+          () => provider.createModel(
+            _spec('model.gguf'),
+            const RuntimeConfig(
+              modelPath: '/models/model.gguf',
+              maxTokens: 2048,
+            ),
+          ),
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, String line) => logs.add(line),
+          ),
+        );
+        addTearDown(loaded.close);
+        expect(loaded.activeBackend, edge.PreferredBackend.gpu);
+        expect(loaded.maxTokens, 2048);
+        expect(
+          logs.where(
+            (line) =>
+                line.startsWith('[flutter_edge_ai] WARNING:') &&
+                line.contains('12 of 28 layers') &&
+                line.contains('Vulkan0: 4000000000 bytes free'),
+          ),
+          hasLength(1),
+        );
+      },
+      skip: kIsWeb,
+    );
+
+    test(
+      'allows auto CPU when zero layers fit, reports reason and sets CPU activeBackend',
+      () async {
+        final logs = <String>[];
+        engine
+          ..gpuLayers = 0
+          ..backendName = 'Vulkan, CPU'
+          ..gpuMemoryFitReport = const llama.GpuMemoryFitReport(
+            outcome: llama.GpuMemoryFitOutcome.cpu,
+            modelLayers: 28,
+            gpuLayers: 0,
+            contextSize: 2048,
+            marginBytes: llama.GpuMemoryFit.defaultMarginBytes,
+            devices: [device],
+          );
+        final provider = createLlamaProviderForTest(
+          supportsGpuMemoryFit: () => true,
+          loader: (_, _) async => engine,
+        );
+        final loaded = await runZoned(
+          () => provider.createModel(
+            _spec('model.gguf'),
+            const RuntimeConfig(
+              modelPath: '/models/model.gguf',
+              maxTokens: 2048,
+            ),
+          ),
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, String line) => logs.add(line),
+          ),
+        );
+        addTearDown(loaded.close);
+        expect(loaded.activeBackend, edge.PreferredBackend.cpu);
+        expect(
+          logs.where(
+            (line) =>
+                line.startsWith('[flutter_edge_ai] WARNING:') &&
+                line.contains('fell back to CPU') &&
+                line.contains('no layer fits free GPU memory') &&
+                line.contains('Vulkan0: 4000000000 bytes free'),
+          ),
+          hasLength(1),
+        );
+      },
+      skip: kIsWeb,
+    );
+
+    test(
+      'explicit GPU preserves SDK LlamaGpuMemoryFitException with fit reason',
+      () async {
+        const report = llama.GpuMemoryFitReport(
+          outcome: llama.GpuMemoryFitOutcome.cpu,
+          modelLayers: 28,
+          gpuLayers: 0,
+          contextSize: 2048,
+          marginBytes: llama.GpuMemoryFit.defaultMarginBytes,
+          devices: [device],
+        );
+        final cause = llama.LlamaGpuMemoryFitException(
+          'ComputeDevice.gpu was requested, but no layer of the model fits '
+          'the free GPU memory with a 1073741824-byte margin.',
+          report: report,
+        );
+        final provider = createLlamaProviderForTest(
+          supportsGpuMemoryFit: () => true,
+          loader: (_, _) async => throw cause,
+        );
+        await expectLater(
+          provider.createModel(
+            _spec('model.gguf'),
+            const RuntimeConfig(
+              modelPath: '/models/model.gguf',
+              maxTokens: 2048,
+              preferredBackend: edge.PreferredBackend.gpu,
+            ),
+          ),
+          throwsA(
+            allOf(
+              same(cause),
+              isA<llama.LlamaGpuMemoryFitException>().having(
+                (e) => e.message,
+                'message',
+                contains('no layer of the model fits'),
+              ),
+            ),
+          ),
+        );
+      },
+      skip: kIsWeb,
+    );
+
+    test(
+      'explicit GPU fails with fit reason and disposes engine if fit report falls back to CPU',
+      () async {
+        engine
+          ..gpuLayers = 0
+          ..backendName = 'CPU'
+          ..gpuMemoryFitReport = const llama.GpuMemoryFitReport(
+            outcome: llama.GpuMemoryFitOutcome.cpu,
+            modelLayers: 28,
+            gpuLayers: 0,
+            contextSize: 2048,
+            marginBytes: llama.GpuMemoryFit.defaultMarginBytes,
+            devices: [device],
+          );
+        final provider = createLlamaProviderForTest(
+          supportsGpuMemoryFit: () => true,
+          loader: (_, _) async => engine,
+        );
+        await expectLater(
+          provider.createModel(
+            _spec('model.gguf'),
+            const RuntimeConfig(
+              modelPath: '/models/model.gguf',
+              maxTokens: 2048,
+              preferredBackend: edge.PreferredBackend.gpu,
+            ),
+          ),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('no layer fits free GPU memory'),
+                contains('Vulkan0: 4000000000 bytes free'),
+              ),
+            ),
+          ),
+        );
+        expect(engine.disposals, 1);
+      },
+      skip: kIsWeb,
+    );
+
+    test(
+      'unchanged GPU fit and skipped GPU-less auto load emit no release warnings',
+      () async {
+        final logs = <String>[];
+        final provider = createLlamaProviderForTest(
+          supportsGpuMemoryFit: () => true,
+          loader: (_, _) async => engine,
+        );
+
+        engine
+          ..gpuLayers = 28
+          ..backendName = 'Vulkan'
+          ..gpuMemoryFitReport = const llama.GpuMemoryFitReport(
+            outcome: llama.GpuMemoryFitOutcome.unchanged,
+            modelLayers: 28,
+            gpuLayers: 28,
+            contextSize: 2048,
+            marginBytes: llama.GpuMemoryFit.defaultMarginBytes,
+            devices: [device],
+          );
+        final gpuLoaded = await runZoned(
+          () => provider.createModel(
+            _spec('model.gguf'),
+            const RuntimeConfig(
+              modelPath: '/models/model.gguf',
+              maxTokens: 2048,
+            ),
+          ),
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, String line) => logs.add(line),
+          ),
+        );
+        expect(gpuLoaded.activeBackend, edge.PreferredBackend.gpu);
+        await gpuLoaded.close();
+
+        engine
+          ..gpuLayers = 0
+          ..backendName = 'CPU'
+          ..gpuMemoryFitReport = const llama.GpuMemoryFitReport(
+            outcome: llama.GpuMemoryFitOutcome.skipped,
+            reason: 'The load selects no GPU device.',
+            marginBytes: llama.GpuMemoryFit.defaultMarginBytes,
+          );
+        final cpuLoaded = await runZoned(
+          () => provider.createModel(
+            _spec('model.gguf'),
+            const RuntimeConfig(
+              modelPath: '/models/model.gguf',
+              maxTokens: 2048,
+            ),
+          ),
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, String line) => logs.add(line),
+          ),
+        );
+        expect(cpuLoaded.activeBackend, edge.PreferredBackend.cpu);
+        await cpuLoaded.close();
+
+        expect(logs.where((line) => line.contains('WARNING:')), isEmpty);
+        expect(logs, [
+          'GGUF GPU memory fit skipped: The load selects no GPU device.',
+        ]);
+      },
+      skip: kIsWeb,
+    );
+  });
 }
 
 edge.InferenceModelSpec _spec(
@@ -4467,6 +4886,14 @@ class _FakeEngine extends llama.LlamaEngine {
   int Function(List<llama.LlamaChatMessage>)? promptCounter;
   int? gpuLayers = 0;
   String? backendName;
+  llama.GpuMemoryFitReport? gpuMemoryFitReport;
+  int gpuMemoryFitReportReads = 0;
+  @override
+  Future<llama.GpuMemoryFitReport?> getGpuMemoryFitReport() async {
+    gpuMemoryFitReportReads++;
+    return gpuMemoryFitReport;
+  }
+
   @override
   Future<String> getBackendName() async =>
       backendName ??

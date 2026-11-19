@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
 import 'backend_config.dart';
+import 'gpu_memory_fit_platform.dart';
 import 'llama_inference_model.dart';
 import 'runtime_error.dart';
 import 'structured_output_platform.dart';
@@ -29,7 +30,9 @@ typedef LlamaProjectorResolver =
 /// Models are selected by the declared [edge.ModelFileType.gguf] type.
 final class LlamaEngineProvider implements InferenceEngineProvider {
   /// Creates a provider, optionally resolving model-specific projectors.
-  const LlamaEngineProvider({this.projectorResolver}) : _loader = null;
+  const LlamaEngineProvider({this.projectorResolver})
+    : _loader = null,
+      _supportsGpuMemoryFit = null;
 
   /// Test-only injection; applications use the default constructor.
   // ignore: prefer_initializing_formals — keeps the test callback parameter readable.
@@ -37,10 +40,16 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
     required Future<llama.LlamaEngine> Function(String, llama.ModelParams)
     loader,
     this.projectorResolver,
-  }) : _loader = loader; // ignore: prefer_initializing_formals
+    bool Function()? supportsGpuMemoryFit,
+  }) : _loader = loader, // ignore: prefer_initializing_formals
+       // ignore: prefer_initializing_formals
+       _supportsGpuMemoryFit = supportsGpuMemoryFit;
 
   /// Optional engine factory for tests.
   final _LlamaEngineLoader? _loader;
+
+  /// Optional host support override for tests.
+  final bool Function()? _supportsGpuMemoryFit;
 
   /// Application-owned projector installation and pairing policy.
   final LlamaProjectorResolver? projectorResolver;
@@ -122,6 +131,10 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
         );
       }
     }
+    final fitRequested =
+        !kIsWeb &&
+        device != llama.ComputeDevice.cpu &&
+        (_supportsGpuMemoryFit ?? supportsGpuMemoryFit)();
     final params = llama.ModelParams(
       contextSize: config.maxTokens,
       loras: [
@@ -134,6 +147,7 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
       gpuLayers: device == llama.ComputeDevice.cpu
           ? 0
           : llama.ModelParams.maxGpuLayers,
+      gpuMemoryFit: fitRequested ? const llama.GpuMemoryFit() : null,
     );
     final llama.LlamaEngine engine;
     try {
@@ -194,10 +208,20 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
           'Requested ${config.maxTokens} context tokens, but the runtime loaded $contextSize. Request a smaller context explicitly.',
         );
       }
-      final activeBackend = resolveBackend(
-        backendName,
-        config.preferredBackend,
-      );
+      final fitReport = fitRequested
+          ? await engine.getGpuMemoryFitReport()
+          : null;
+      if (fitReport?.outcome == llama.GpuMemoryFitOutcome.cpu &&
+          config.preferredBackend == edge.PreferredBackend.gpu) {
+        throw UnsupportedError(
+          'GPU was requested, but ${_gpuFitCpuReason(fitReport!)}.',
+        );
+      }
+      var activeBackend = resolveBackend(backendName, config.preferredBackend);
+      if (fitReport != null) {
+        activeBackend = _resolveBackendWithFitReport(activeBackend, fitReport);
+        _reportGpuMemoryFit(fitReport);
+      }
       return LlamaInferenceModel(
         engine: engine,
         modelType: spec.modelType,
@@ -264,12 +288,74 @@ Future<llama.LlamaEngine> _loadGgufEngine(
   params: params,
 );
 
+/// Refines [activeBackend] from the SDK's [fitReport] when fit placement
+/// establishes CPU fallback or GPU layer offload.
+edge.PreferredBackend? _resolveBackendWithFitReport(
+  edge.PreferredBackend? activeBackend,
+  llama.GpuMemoryFitReport fitReport,
+) => switch (fitReport.outcome) {
+  llama.GpuMemoryFitOutcome.cpu => edge.PreferredBackend.cpu,
+  llama.GpuMemoryFitOutcome.reduced || llama.GpuMemoryFitOutcome.unchanged
+      when fitReport.gpuLayers > 0 =>
+    edge.PreferredBackend.gpu,
+  _ => activeBackend,
+};
+
+/// Prints release-visible warnings when [fitReport] partially offloads or falls
+/// back to CPU so apps see why GPU memory fitting changed the load.
+void _reportGpuMemoryFit(llama.GpuMemoryFitReport fitReport) {
+  switch (fitReport.outcome) {
+    case llama.GpuMemoryFitOutcome.reduced:
+      // ignore: avoid_print — release builds strip edgeAiLog.
+      print(
+        '[flutter_edge_ai] WARNING: GGUF GPU memory fit offloaded '
+        '${fitReport.gpuLayers} of ${fitReport.modelLayers} layers '
+        '(context ${fitReport.contextSize}, '
+        '${fitReport.marginBytes}-byte margin)'
+        '${_formatGpuMemoryFitDevices(fitReport.devices)}.',
+      );
+    case llama.GpuMemoryFitOutcome.cpu:
+      // ignore: avoid_print — release builds strip edgeAiLog.
+      print(
+        '[flutter_edge_ai] WARNING: GGUF automatic GPU memory fit fell back '
+        'to CPU because ${_gpuFitCpuReason(fitReport)}.',
+      );
+    case llama.GpuMemoryFitOutcome.skipped:
+      edgeAiLog(
+        'GGUF GPU memory fit skipped: '
+        '${fitReport.reason ?? 'no reason reported'}',
+      );
+    case llama.GpuMemoryFitOutcome.unchanged:
+      break;
+  }
+}
+
+String _gpuFitCpuReason(llama.GpuMemoryFitReport report) {
+  final reason = report.reason?.trim();
+  final detail = (reason == null || reason.isEmpty)
+      ? 'no layer fits free GPU memory with a ${report.marginBytes}-byte margin'
+      : reason;
+  return '$detail${_formatGpuMemoryFitDevices(report.devices)}';
+}
+
+String _formatGpuMemoryFitDevices(List<llama.GpuMemoryFitDevice> devices) {
+  if (devices.isEmpty) return '';
+  final details = [
+    for (final device in devices)
+      '${device.name}: ${device.freeBytes} bytes free, '
+          '${device.projectedBytes} projected',
+  ].join('; ');
+  return ' ($details)';
+}
+
 /// Internal injection seam for connector tests; not exported by the package.
 @visibleForTesting
 LlamaEngineProvider createLlamaProviderForTest({
   required Future<llama.LlamaEngine> Function(String, llama.ModelParams) loader,
   LlamaProjectorResolver? projectorResolver,
+  bool Function()? supportsGpuMemoryFit,
 }) => LlamaEngineProvider._withLoader(
   loader: loader,
   projectorResolver: projectorResolver,
+  supportsGpuMemoryFit: supportsGpuMemoryFit,
 );
